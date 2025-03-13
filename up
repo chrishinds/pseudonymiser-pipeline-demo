@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# clean the output folder
+rm -rf ./results/*
+
+# for simplicity there is one python dist folder which is made available to all nodes
+# start by refreshing the requirements.txt from our venv, and copy to dist
+source ./venv/bin/Activate
+pip freeze > ./src/requirements.txt
+
+# before going further we should check that metastore.yml is valid by parsing it
+python ./src/meta.py --filepath ./src/metastore.yml
+
+# now run docker compose up
+docker compose up "$@"

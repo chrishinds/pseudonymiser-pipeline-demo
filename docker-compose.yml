@@ -1,0 +1,76 @@
+networks:
+  app-tier:
+    driver: bridge
+
+services:
+  broker:
+    image: 'bitnami/kafka:latest'
+    networks:
+      - app-tier
+    ports:
+      - 9094:9094
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@broker:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+    healthcheck:
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1
+      interval: 1s
+      timeout: 60s
+      retries: 60
+
+  init-broker:
+    image: 'bitnami/kafka:latest'
+    networks:
+      - app-tier
+    volumes:
+      - ./src:/app
+    depends_on:
+      broker:
+        condition: service_healthy
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      kafka-topics.sh --bootstrap-server broker:9092 --create --topic patient-source
+      kafka-topics.sh --bootstrap-server broker:9092 --create --topic patient-pseudo
+      kafka-topics.sh --bootstrap-server broker:9092 --create --topic audit-cleaner-consumer
+      "
+
+  producer:
+    image: 'quay.io/jupyter/pyspark-notebook:latest'
+    networks:
+      - app-tier
+    volumes:
+      - ./src:/home/jovyan
+      - ./fixtures/output:/fixtures
+    environment:
+      - MESSAGE_BROKER=broker:9092
+      - PRODUCER_SOURCE_FIXTURE=/fixtures/sample_data.json
+    command: "sh -c 'pip install -r requirements.txt && python -u /home/jovyan/meta.py --filepath /home/jovyan/metastore.yml --run patient_producer'"
+    depends_on:
+      init-broker:
+        condition: service_started
+
+  consumer:
+    image: 'quay.io/jupyter/pyspark-notebook:latest'
+    networks:
+      - app-tier
+    volumes:
+      - ./src:/home/jovyan
+      - ./fixtures/output:/fixtures
+      - ./spark_conf:/usr/local/spark/conf
+      - ./results:/results
+    environment:
+      - MESSAGE_BROKER=broker:9092
+      - TRANSLATE_CITY_REGION_FIXTURE=/fixtures/city_to_region.parquet
+      - PATIENT_PSEUDO_AUDIT_FILEPATH=/results/audit_patient_pseudonymiser
+      - PATIENT_PSEUDO_FILEPATH=/results/patient_pseudo_deltatable
+    depends_on:
+      init-broker:
+        condition: service_started
+    ports:
+      - 8888:8888
+      - 4040:4040
