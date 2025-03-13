@@ -47,9 +47,10 @@ Then processed in a number of transforms, including:
 ```
 Forenames are roughly the most unusual pre-1930s entries in the American census. 
 Surnames are all double-barreled, formed from random nouns taken from the `wordnet` data packaged in Python `nltk`. 
-It is always comforting when demonstrator data to looks distinctively unreal. 
 Diagnoses are taken from NHS Digital Primary Care SNOMED code aggregate usage.
-Their frequency in this sample data match the frequency in the source dataset. 
+Their frequency in this sample data match their frequencies in the source dataset. 
+
+It is always comforting when synthetic data look distinctly unreal. 
 
 ## Pipeline Definition
 
@@ -135,7 +136,7 @@ The second pipeline, `patient_pseudonymiser`, connects to the kafka source, stre
 ```
 Three reusable transforms are applied. The first uses a lookup table to convert the `city` column into a `region` column. 
 The second replaces the patient name with the string `XXXXX`.
-The last removes the final section of the postcode ie from `BR5 2RE` to `BR5`. 
+The last removes the final section of the postcode, e.g. from `BR5 2RE` to `BR5`. 
 
 A third pipeline, `memory_patient_pseudonymiser`, presents another version of the one above, but whose sinks are all in-memory. 
 They are wrapped in an asynchronous Python generator, which yields dataframes that can be `display()`ed continuously within a notebook. 
@@ -151,7 +152,7 @@ class SplitPick(Transform):
     pick_index: int
     infraclass: Type[transformation.SplitPickTransform] = transformation.SplitPickTransform
 ```
-is implemented by calling `infra_instance = meta_instance.infraclass.bootstrap(meta_instance...)`, defined by the class `transformation.SplitPickTransform`:
+is implemented by calling `infra_instance = meta_instance.infraclass.bootstrap(meta_instance...)`, defined in the class `transformation.SplitPickTransform`:
 ```python
 class SplitPickTransform(AuditingTransform, Infraclass):
     def __init__(self, transform_name, source_column, destination_column, primary_column, split_by, pick_index):
@@ -169,7 +170,7 @@ class SplitPickTransform(AuditingTransform, Infraclass):
         primary_column = kwargs.get('primary_column', None)
         return cls(meta_instance.transform_type, meta_instance.source_column, meta_instance.destination_column, primary_column, meta_instance.split_by, meta_instance.pick_index)
 ```
-This decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves `SplitPickTransform.__init__` sufficiently clean to make it usable directly from Python, in addition to specifiable from YAML.
+It decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves `SplitPickTransform.__init__` sufficiently clean to make it usable directly from Python. Python allows only one initializer - secondary instantiation from a class method is commonplace. 
 
 In the case of a `SplitPickTransform`, the actual Spark code lives in the `apply_transform(...)` method. 
 
