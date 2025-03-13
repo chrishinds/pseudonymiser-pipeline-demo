@@ -3,7 +3,7 @@ from pyspark.sql import functions as SQL
 from pathlib import Path
 from functools import reduce
 from abc import abstractmethod
-import os, asyncio
+import os
 from infra import Infraclass, Pipeline, Transform
 
 
@@ -115,8 +115,6 @@ class TransformerPipeline(Infraclass, Pipeline):
                     .config('spark.sql.catalog.spark_catalog', 'org.apache.spark.sql.delta.catalog.DeltaCatalog') \
                     .config('spark.sql.streaming.checkpointLocation', '/tmp/checkpoints') \
                     .getOrCreate()
-        # self.spark.conf.set('spark.sql.shuffle.partitions', '5')
-        # self.spark.conf.set("spark.sql.streaming.checkpointLocation", '/tmp/checkpoints')
         self.spark.sparkContext.setLogLevel("WARN")
         self.transformed_stream = source.connect(self.spark)
         audit_list = []

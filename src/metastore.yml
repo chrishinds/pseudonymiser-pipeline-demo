@@ -33,8 +33,6 @@ connectors:
     topics:
     - topic_name: patient-source
       topic_schema: patient_source
-    - topic_name: patient-audit
-      topic_schema: patient_audit
   - id: deltalake_dev
     connector_type: deltalake
     tables:
