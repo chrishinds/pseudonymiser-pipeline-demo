@@ -1,0 +1,67 @@
+{
+    "download": [
+        {
+            "info": "https://geoportal.statistics.gov.uk/datasets/525b74a332c84146add21c9b54f5ce68/about",
+            "url": "https://www.arcgis.com/sharing/rest/content/items/525b74a332c84146add21c9b54f5ce68/data",
+            "description": "National Statistics Postcode Lookup (Feb 2025)",
+            "filepath": "./data/source/NSPL/NSPL_FEB_2025.zip"
+        },
+        {
+            "info": "https://digital.nhs.uk/data-and-information/publications/statistical/mi-snomed-code-usage-in-primary-care/2023-24",
+            "url": "https://files.digital.nhs.uk/70/C33DEC/SNOMED_code_usage_2023-24.xlsx",
+            "description": "approximate aggregated SNOMED code usage in English Primary Care",
+            "filepath": "./data/source/SNOMED-PC/SNOMED_code_usage_2023-24.xlsx"
+        },
+        {
+            "info": "https://github.com/hadley/data-baby-names",
+            "url": "https://raw.githubusercontent.com/hadley/data-baby-names/refs/heads/master/baby-names.csv",
+            "description": "historic US census forename data",
+            "filepath": "./data/source/forenames/forenames.csv"
+        }
+    ],
+    "transform": [
+        {
+            "function": "snomed_transform",
+            "params": {
+                "input": "./data/source/SNOMED-PC/SNOMED_code_usage_2023-24.xlsx",
+                "output": "./data/output/snomed_freq.parquet"
+            }
+        },
+        {
+            "function": "postcode_transform",
+            "params": {
+                "nspl_fact_table_filename": "./data/source/NSPL/Data/NSPL_FEB_2025_UK.csv",
+                "ttwa_dimension_filename": "./data/source/NSPL/Documents/TTWA names and codes UK as at 12_11 v5.csv",
+                "rgn20cd_dimension_filename": "./data/source/NSPL/Documents/Region names and codes EN as at 12_20 (RGN).csv",
+                "city_table_output": "./data/output/postcodes_to_city.parquet",
+                "region_table_output": "./data/output/city_to_region.parquet"
+            }
+        },
+        {
+            "function": "forenames_transform",
+            "params": {
+                "input": "./data/source/forenames/forenames.csv",
+                "number": 1000,
+                "output": "./data/output/forenames.parquet"
+            }
+        },
+        {
+            "function": "surnames_transform",
+            "params": {
+                "number": 1000,
+                "output": "./data/output/surnames.parquet"
+            }
+        },
+        {
+            "function": "sample_data_transform",
+            "params": {
+                "number": 1000,
+                "city_filename": "./data/output/postcodes_to_city.parquet",
+                "snomed_filename": "./data/output/snomed_freq.parquet",
+                "forenames_filename": "./data/output/forenames.parquet",
+                "surnames_filename": "./data/output/surnames.parquet",
+                "output": "./data/output/sample_data.json"
+            }
+        }
+    ]
+}
