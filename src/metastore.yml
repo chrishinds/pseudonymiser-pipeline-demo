@@ -1,0 +1,120 @@
+schemas:
+  - name: patient_source
+    primary_field: patient_id
+    fields:
+      patient_id: integer
+      patient_name: string
+      city: string
+      postcode: string
+      disease: string
+  - name: patient_pseudo
+    primary_field: patient_id
+    fields:
+        batch_id: integer
+        inserted_at: timestamp
+        patient_id: integer
+        patient_name: string
+        city: string
+        postcode: string
+        disease: string
+        region: string
+  - name: patient_audit
+    primary_field: patient_id
+    fields:
+        patient_id: integer
+        old_value: string
+        new_value: string
+        transform_tag: string
+
+connectors:
+  - id: kafka_dev
+    connector_type: kafka
+    broker_env: MESSAGE_BROKER
+    topics:
+    - topic_name: patient-source
+      topic_schema: patient_source
+    - topic_name: patient-audit
+      topic_schema: patient_audit
+  - id: deltalake_dev
+    connector_type: deltalake
+    tables:
+      - table_name: patient_pseudo
+        table_schema: patient_pseudo
+        filepath_env: PATIENT_PSEUDO_FILEPATH
+        partition_on: inserted_at
+
+pipelines:
+  - id: patient_producer
+    pipeline_type: kafka_producer
+    source_filepath_env: PRODUCER_SOURCE_FIXTURE
+    sink_topic: kafka_dev.patient-source
+    interval_seconds_mean: 0.5
+    interval_seconds_sd: 1
+
+  - id: patient_pseudonymiser
+    pipeline_type: transformer
+    source: 
+      source_type: kafka
+      connector_id: kafka_dev
+      topic: patient-source
+    sink: 
+      sink_type: deltalake
+      connector_id: deltalake_dev
+      table: patient_pseudo
+      trigger_seconds: 60
+      coalesce: 1
+    audit: 
+      sink_type: file
+      filepath_env: PATIENT_PSEUDO_AUDIT_FILEPATH
+      format: json
+      trigger_seconds: 60
+      coalesce: 1
+    transforms:
+      - transform_type: translate
+        source_column: city
+        destination_column: region
+        fixture_filepath_env: TRANSLATE_CITY_REGION_FIXTURE
+        key_column: city
+        value_column: region
+      - transform_type: redact
+        source_column: patient_name
+        destination_column: patient_name
+        replace_with: XXXXX
+      - transform_type: split_pick
+        source_column: postcode
+        destination_column: postcode
+        split_by: ' '
+        pick_index: 0
+
+  - id: memory_patient_pseudonymiser
+    pipeline_type: transformer
+    source: 
+      source_type: kafka
+      connector_id: kafka_dev
+      topic: patient-source
+    sink: 
+      sink_type: memory
+      query_name: patient_query
+      query_interval: 10
+      duration_seconds: 120
+    audit: 
+      sink_type: memory
+      query_name: patient_audit_query
+      query_interval: 30
+      duration_seconds: 120
+    transforms:
+      - transform_type: translate
+        source_column: city
+        destination_column: region
+        fixture_filepath_env: TRANSLATE_CITY_REGION_FIXTURE
+        key_column: city
+        value_column: region
+      - transform_type: redact
+        source_column: patient_name
+        destination_column: patient_name
+        replace_with: XXXXX
+      - transform_type: split_pick
+        source_column: postcode
+        destination_column: postcode
+        split_by: ' '
+        pick_index: 0
