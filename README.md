@@ -1,6 +1,6 @@
 # A Spark Streaming Pipeline Defined in YAML
 
-This repo contains the result of a 4-day data-engineering hack to process records from Kafka using a Spark Structured Streaming pipeline, defined by a YAML specification, and docker compose to raise a small collection of containers. 
+This repo contains the result of a 4-day data-engineering hack to process records from Kafka using a Spark Structured Streaming pipeline, defined by a YAML specification, with docker compose to raise a small collection of containers. 
 The demonstrator is of a pseudonymiser pipeline which takes patient records and applies a series of transforms to remove identifying details, outputting pseudonymised patient records, and an audit trail of the changes made. 
 There are some  caveats, which I'll outline at the end. 
 
@@ -47,9 +47,9 @@ Then processed in a number of transforms, including:
 ```
 Forenames are roughly the most unusual pre-1930s entries in the American census. 
 Surnames are all double-barreled, formed from random nouns taken from the `wordnet` data packaged in Python `nltk`. 
-It is always comforting when demonstrator data to looks distinctively un-real. 
+It is always comforting when demonstrator data to looks distinctively unreal. 
 Diagnoses are taken from NHS Digital Primary Care SNOMED code aggregate usage.
-There frequency in this sample data match the frequency in the source dataset. 
+Their frequency in this sample data match the frequency in the source dataset. 
 
 ## Pipeline Definition
 
@@ -67,7 +67,7 @@ schemas:
       disease: string
 ```
 The next section defines parameters for connection to the external services used by the pipeline, including Kafka and DeltaLake. 
-A number of values are left for definition from environment variables, especially where values are the remit of devops 
+A number of keys are defined in environment variables, especially where values are the remit of devops 
 (these are filled out in [docker-compose.yml](docker-compose.yml)).
 ```yaml
 connectors:
@@ -85,7 +85,7 @@ connectors:
         filepath_env: PATIENT_PSEUDO_FILEPATH
         partition_on: inserted_at
 ```
-The metastore defines three pipelines, The first `patient_producer` is a small service which reads the `sample_data.json` fixture and outputs patients
+The metastore defines three pipelines. The first, `patient_producer`, is a small service which reads the `sample_data.json` fixture and outputs patients
 one-by-one into a Kafka topic, at a randomised rate. 
 ```yaml
 pipelines:
@@ -96,7 +96,7 @@ pipelines:
     interval_seconds_mean: 0.5
     interval_seconds_sd: 1
 ```
-The second pipeline `patient_pseudonymiser` connects to the kafka source, streams outputs to a deltalake table, and sends audit records to a file. 
+The second pipeline, `patient_pseudonymiser`, connects to the kafka source, streams outputs to a deltalake table, and sends audit records to a file. 
 ```yaml
   - id: patient_pseudonymiser
     pipeline_type: transformer
@@ -135,10 +135,10 @@ The second pipeline `patient_pseudonymiser` connects to the kafka source, stream
 ```
 Three reusable transforms are applied. The first uses a lookup table to convert the `city` column into a `region` column. 
 The second replaces the patient name with the string `XXXXX`.
-The last removes the last section of the postcode ie from `BR5 2RE` to `BR5`. 
+The last removes the final section of the postcode ie from `BR5 2RE` to `BR5`. 
 
-A final pipeline `memory_patient_pseudonymiser` is another version of the one above, but whose sinks are all in-memory. 
-They are connected to an asynchronous Python generator, which yields dataframes that can be `display()`ed continuously within a notebook. 
+A third pipeline, `memory_patient_pseudonymiser`, presents another version of the one above, but whose sinks are all in-memory. 
+They are wrapped in an asynchronous Python generator, which yields dataframes that can be `display()`ed continuously within a notebook. 
 
 ## Pipeline Construction
 
@@ -169,12 +169,12 @@ class SplitPickTransform(AuditingTransform, Infraclass):
         primary_column = kwargs.get('primary_column', None)
         return cls(meta_instance.transform_type, meta_instance.source_column, meta_instance.destination_column, primary_column, meta_instance.split_by, meta_instance.pick_index)
 ```
-This decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves the `__init__` sufficiently clean to make them usable directly from python, in addition to specifiable from yaml.
+This decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves `SplitPickTransform.__init__` sufficiently clean to make it usable directly from Python, in addition to specifiable from YAML.
 
 In the case of a `SplitPickTransform`, the actual Spark code lives in the `apply_transform(...)` method. 
 
 Spark pipelines are constructed by the [transformation.TransformerPipeline](src/transformation.py) class. 
-It creates a spark session and then connects it to an source such as [sparkio.KafkaSparkSource](src/sparkio.py) to get a read stream.
+It creates a spark session and then connects it to a source such as [sparkio.KafkaSparkSource](src/sparkio.py) to get a read stream.
 Transforms like `SplitPickTransform` are then iteratively applied. 
 This includes the formation of a second audit stream by the [transformation.AuditingTransform](src/transformation.py) superclass.
 Finally the transform can be `run()` which connects these two streams to appropriate sinks like [sparkio.DeltaRsSparkSink](src/sparkio.py).
