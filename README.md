@@ -144,35 +144,40 @@ They are wrapped in an asynchronous Python generator, which yields dataframes th
 ## Pipeline Construction
 
 The `metastore.yaml` file is validated using `Pydantic` models defined in [src/meta.py](src/meta.py).
-Each model has an `infraclass` property, which defines the corresponding pipeline implementation code. For example, a meta-model instance `meta_instance` of class `meta.SplitPick`:
+Each model has an `infraclass` property, which defines the corresponding pipeline implementation code. For example, a meta-model instance `meta_instance` of class `meta.Translate`:
 ```python
-class SplitPick(Transform):
-    transform_type: Literal['split_pick']
-    split_by: str
-    pick_index: int
-    infraclass: Type[transformation.SplitPickTransform] = transformation.SplitPickTransform
+class Translate(Transform):
+    transform_type: Literal['translate']
+    fixture_filepath_env: str
+    key_column: str
+    value_column: str
+    infraclass: Type[transformation.TranslateTransform] = transformation.TranslateTransform
 ```
-is implemented by calling `infra_instance = meta_instance.infraclass.bootstrap(meta_instance...)`, defined in the class `transformation.SplitPickTransform`:
+is implemented by calling `infra_instance = meta_instance.infraclass.bootstrap(meta_instance...)`, defined in the class `transformation.TranslateTransform`:
 ```python
-class SplitPickTransform(AuditingTransform, Infraclass):
-    def __init__(self, transform_name, source_column, destination_column, primary_column, split_by, pick_index):
-        tag_params = dict(split_by=split_by, pick_index=pick_index)
+class TranslateTransform(AuditingTransform, Infraclass):
+    def __init__(self, transform_name, source_column, destination_column, primary_column, fixtures_path, key_column, value_column):
+        tag_params = dict(fixture=Path(fixtures_path).stem, key_column=key_column, value_column=value_column)
         super().__init__(transform_name, source_column, destination_column, primary_column, tag_params)
-        self.split_by, self.pick_index = split_by, pick_index
+        self.fixtures_path, self.key_column, self.value_column = fixtures_path, key_column, value_column
 
     def apply_transform(self, stream_df, spark_session):
-        split_col = SQL.split(stream_df[self.source_column], self.split_by)
-        transformed_stream = stream_df.withColumn(self.destination_column, split_col.getItem(0))
+        translation_df = spark_session.read.option('inferSchema', 'true').option('header','true').parquet(self.fixtures_path)
+        translation_df = translation_df.withColumnRenamed(self.key_column, self.source_column).withColumnRenamed(self.value_column, self.destination_column)
+        translation_df.cache()
+        transformed_stream = stream_df.join(translation_df, on=self.source_column, how='left')
         return transformed_stream
-    
+
     @classmethod
     def bootstrap(cls, meta_instance, metastore, default_env, **kwargs):
         primary_column = kwargs.get('primary_column', None)
-        return cls(meta_instance.transform_type, meta_instance.source_column, meta_instance.destination_column, primary_column, meta_instance.split_by, meta_instance.pick_index)
+        fixture_filepath = os.environ.get(meta_instance.fixture_filepath_env, default_env.get(meta_instance.fixture_filepath_env))
+        return cls(meta_instance.transform_type, meta_instance.source_column, meta_instance.destination_column, primary_column, fixture_filepath, meta_instance.key_column, meta_instance.value_column)
 ```
-It decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves `SplitPickTransform.__init__` sufficiently clean to make it usable directly from Python. Python allows only one initializer - secondary instantiation from a class method is commonplace. 
+It decouples specification and implementation. Bootstrap methods de-reference environment variables, and lookup information from different parts of the metastore, as required. This leaves `TranslateTransform.__init__` sufficiently clean to make it usable directly from Python. Python allows only one initializer - secondary instantiation from a class method is commonplace. 
 
-In the case of a `SplitPickTransform`, the actual Spark code lives in the `apply_transform(...)` method. 
+In the case of a `TranslateTransform`, the actual Spark code lives in the `apply_transform(...)` method. 
+This transform works by loading in a static translation table, and joining it on `self.source_column` to the incoming `stream_df`.
 
 Spark pipelines are constructed by the [transformation.TransformerPipeline](src/transformation.py) class. 
 It creates a spark session and then connects it to a source such as [sparkio.KafkaSparkSource](src/sparkio.py) to get a read stream.
