@@ -238,7 +238,7 @@ Finally, part of the audit record is the `transform_tag` field, formed by `getTr
 ```text
 region#1 = patient_pseudonymiser.translate(city#0, fixture='city_to_region', key_column='city', value_column='region')
 ```
-which captures the id of the pipeline, the transform's name, the parameters it was given. Field indexes reflect a transform's position in its pipeline's transform list. 
+This captures the id of the pipeline, the transform's name, and the parameters it was given. Field indexes reflect a transform's position in its pipeline's transform list. 
 
 ## Raise the Services
 
