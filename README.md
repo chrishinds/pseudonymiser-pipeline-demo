@@ -185,6 +185,61 @@ Transforms like `SplitPickTransform` are then iteratively applied.
 This includes the formation of a second audit stream by the [transformation.AuditingTransform](src/transformation.py) superclass.
 Finally the transform can be `run()` which connects these two streams to appropriate sinks like [sparkio.DeltaRsSparkSink](src/sparkio.py).
 
+Audit stream formation is somewhat interesting. Scattering use of the pyspark API over a class hierarchy, compared to issuing pyspark calls
+sequentially in a simple script, add some complexity for the developer. Conversely, `transformation.AuditingTransform` which is the parent of the `TranslateTransform` shown above, shows how encapsulation can reduce error-prone code repetition and thus provides a developer benefit. 
+
+```python
+class AuditingTransform(Transform):
+    def __init__(self, transform_name, source_column, destination_column, primary_column, params):
+        self.primary_column = primary_column
+        self.source_column = source_column
+        self.destination_column = destination_column
+        self.params = params
+        self.transform_name = transform_name
+
+    def getTransformTag(self, pipeline_id, transform_index):
+        quoted_params = { key: (f"'{value}'" if isinstance(value, str) else value) for key, value in self.params.items()}
+        param_str = ", "+ ", ".join([f"{key}={value}" for key, value in quoted_params.items()]) if self.params else ""
+        return f'{self.destination_column}#{transform_index+1} = {pipeline_id}.{self.transform_name}({self.source_column}#{transform_index}{param_str})'
+
+    def apply(self, before_stream_df, spark_session, pipeline_id, transform_index):
+        # apply the transform
+        after_stream_df = self.apply_transform(before_stream_df, spark_session)
+        # now create the audit record
+        transform_tag = self.getTransformTag(pipeline_id, transform_index)
+        before_cols, after_cols = before_stream_df.columns, after_stream_df.columns
+        # consider error conditions for this transform
+        if self.source_column and self.source_column not in before_cols:
+            raise Exception(f'the given source column {self.source_column} for transform {transform_tag} was not found in the source datastream {before_cols}')
+        elif self.destination_column not in after_cols:
+            raise Exception(f'the given destination column {self.destination_column} for transform {transform_tag} must be present in the destination stream {after_cols}')
+        # the new_value for audit is the same for all transforms: new_value = after_stream.destination_column
+        new_value_df = after_stream_df.withColumnRenamed(self.destination_column, 'new_value')[[self.primary_column, 'new_value']]
+        # at this stage we reach a point of interpretation. if the audit record had contained 'source_value' rather
+        # than 'old_value' then I would have done: 'source_value = before_stream.source_column' ie the value used by the 
+        # transform to produce the destination column. however, 'old_value' implies the value that was overwritten by the 
+        # transform. this latter interpretation is more like a Change Data Capture record. under this latter interpretation, 
+        # 'old_value' will be NULL in cases where a new column is created, and the value of before_stream.destination_column otherwise
+        if self.destination_column not in before_cols:
+            # then the column is new one, we have not changed any original data, so we need a null literal for old_value
+            old_value_df = before_stream_df.withColumn('old_value', SQL.lit(None))[[self.primary_column, 'old_value']]
+        else:
+            # the destination column is changing an existing column, so old_value = before_stream.destination_column 
+            old_value_df = before_stream_df.withColumnRenamed(self.destination_column, 'old_value')[[self.primary_column, 'old_value']]
+        # now join the old and new value columns to form the audit records
+        audit_stream_df = old_value_df.join(new_value_df, on=self.primary_column, how='inner').withColumn('transform_tag', SQL.lit(transform_tag))
+        return after_stream_df, audit_stream_df
+
+    @abstractmethod
+    def apply_transform(self, stream_df, spark_session):
+        return stream_df
+```
+Finally, part of the audit record is the `transform_tag` field, formed by `getTransformTag(...)`. It produces strings such as:
+```text
+region#1 = patient_pseudonymiser.translate(city#0, fixture='city_to_region', key_column='city', value_column='region')
+```
+which captures the id of the pipeline, the transform's name, the parameters it was given. Field indexes reflect a transform's position in its pipeline's transform list. 
+
 ## Raise the Services
 
 Docker compose is used to raise the services defined in [docker-compose.yml](docker-compose.yml). 
@@ -195,7 +250,7 @@ Results from the pipeline are written to `./results` mounted as a volume.
 
 ## Examine the Results
 
-The pipeline is best explored from the [nb/viewer.ipynb](nb/viewer.ipynb) notebook running on the `consumer` container.
+The pipeline is best explored from the [nb/viewer.ipynb](nb/viewer.ipynb) notebook running on the `consumer` container. This shows the various inputs and outputs formatted as dataframes. 
 
 ## Caveats 
 
